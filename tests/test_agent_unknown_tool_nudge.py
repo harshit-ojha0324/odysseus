@@ -152,3 +152,33 @@ def test_offered_tool_with_bad_args_is_not_called_unknown(monkeypatch):
             "not an available tool name" in (m.get("content") or "")
             for m in round_messages if m.get("role") == "system"
         )
+
+
+def test_unknown_tool_in_text_markup_nudges_then_recovers(monkeypatch):
+    # Some servers return a call to an undeclared tool as Qwen markup text
+    # instead of tool_calls. The parser drops it and the markup is stripped,
+    # so the round was just as silent as the native case.
+    _patch_common(monkeypatch)
+    seen = []
+    markup = ("<tool_call>\n<function=browser_navigate>\n<parameter=url>\n"
+              "https://example.com\n</parameter>\n</function>\n</tool_call>")
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen.append([dict(m) for m in messages])
+        text = markup if len(seen) == 1 else "Here is the answer from context."
+        yield f'data: {json.dumps({"delta": text})}\n\n'
+        yield "data: [DONE]\n\n"
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    joined = "".join(_collect(al.stream_agent_loop(
+        "https://api.openai.com/v1", "gpt-x",
+        [{"role": "user", "content": "find the mokka files"}],
+        max_rounds=4, relevant_tools={"bash"},
+    )))
+
+    assert "Here is the answer from context." in joined
+    assert len(seen) >= 2
+    assert any(
+        m.get("role") == "system" and "browser_navigate" in (m.get("content") or "")
+        for m in seen[1]
+    )

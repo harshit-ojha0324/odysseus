@@ -82,7 +82,7 @@ from src.tool_approvals import (
     tool_approval_store,
 )
 from src.tool_types import ToolBlock
-from src.tool_parsing import iter_email_addresses, strip_angle_tags
+from src.tool_parsing import iter_email_addresses, markup_tool_names, strip_angle_tags
 from src.text_scanning import (
     contains_detailed_sequence_request,
     has_prefixed_token_match,
@@ -30540,9 +30540,14 @@ async def stream_agent_loop(
             # "The model returned an empty response" with no hint why. Give it
             # one corrective round with the exact valid names. Shares the
             # _MAX_INTENT_NUDGES cap so a model that keeps guessing can't loop.
+            # Some servers return a call to an undeclared tool as text markup
+            # instead of tool_calls; the parser drops it, so read its names.
+            _offered_tool_names = (
+                set(turn_contract.offered) if turn_contract is not None else set(_tool_names_sent)
+            )
             _unknown_tool_names = sorted(
-                name for name in _malformed_native_tool_names
-                if not _native_tool_name_was_accepted(name, set(_tool_names_sent))
+                name for name in (_malformed_native_tool_names or markup_tool_names(round_response))
+                if not _native_tool_name_was_accepted(name, _offered_tool_names)
             )
             if (
                 _unknown_tool_names
@@ -30555,7 +30560,7 @@ async def stream_agent_loop(
                     "[agent] unknown-tool nudge #%d on round %d: %s",
                     _intent_nudge_count, round_num, _unknown_tool_names,
                 )
-                _valid_names = ", ".join(n for n in _tool_names_sent if n) or "(none available this turn)"
+                _valid_names = ", ".join(sorted(n for n in _offered_tool_names if n)) or "(none available this turn)"
                 messages.append({
                     "role": "system",
                     "content": (
