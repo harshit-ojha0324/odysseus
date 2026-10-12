@@ -182,3 +182,14 @@ def test_unknown_tool_in_text_markup_nudges_then_recovers(monkeypatch):
         m.get("role") == "system" and "browser_navigate" in (m.get("content") or "")
         for m in seen[1]
     )
+
+
+def test_markup_tool_names_stays_linear_on_unclosed_tool_call():
+    # Model output is untrusted; a lazy <tool_call> regex is O(n^2) on an
+    # unclosed opener followed by whitespace (CodeQL py/polynomial-redos).
+    import time
+    from src.tool_parsing import markup_tool_names
+
+    start = time.perf_counter()
+    assert markup_tool_names("<tool_call>" + "\t" * 50000) == []
+    assert time.perf_counter() - start < 1.0

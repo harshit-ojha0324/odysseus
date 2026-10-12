@@ -295,9 +295,9 @@ def markup_tool_names(text: str) -> List[str]:
     """
     text = str(text or "")
     names = _QWEN_FUNCTION_OPEN_RE.findall(text) + _XML_INVOKE_OPEN_RE.findall(text)
-    for body in _XML_TOOL_CALL_RE.findall(text):
+    for _, start, end, _ in _iter_delimited(text, _XML_TOOL_CALL_OPEN_RE, _XML_TOOL_CALL_CLOSE_RE):
         try:
-            name = json.loads(body).get("name")
+            name = json.loads(text[start:end]).get("name")
         except (ValueError, AttributeError):
             continue
         if isinstance(name, str):
